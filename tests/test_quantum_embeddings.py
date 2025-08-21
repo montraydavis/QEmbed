@@ -4,358 +4,531 @@ Tests for quantum embeddings module.
 
 import pytest
 import torch
-import numpy as np
-from unittest.mock import Mock, patch
-
+import torch.nn as nn
+from transformers import BertConfig
 from qembed.core.quantum_embeddings import QuantumEmbeddings
 from qembed.core.collapse_layers import ContextCollapseLayer, AdaptiveCollapseLayer
-from qembed.core.entanglement import EntanglementCorrelation, BellStateEntanglement
 from qembed.core.measurement import QuantumMeasurement, AdaptiveMeasurement
+from qembed.core.entanglement import EntanglementCorrelation
 
 
 class TestQuantumEmbeddings:
-    """Test cases for QuantumEmbeddings class."""
+    """Test quantum embeddings functionality."""
     
     @pytest.fixture
-    def embeddings(self):
-        """Create a QuantumEmbeddings instance for testing."""
-        return QuantumEmbeddings(
+    def config(self):
+        """Create a BERT config for testing."""
+        return BertConfig(
             vocab_size=1000,
-            embedding_dim=128,
-            num_states=4,
-            dropout=0.1
+            hidden_size=128,
+            max_position_embeddings=512,
+            type_vocab_size=2
         )
+    
+    @pytest.fixture
+    def embeddings(self, config):
+        """Create quantum embeddings instance."""
+        return QuantumEmbeddings(config=config)
     
     @pytest.fixture
     def input_ids(self):
-        """Create sample input IDs."""
+        """Create input token IDs."""
         return torch.randint(0, 1000, (2, 10))
     
-    def test_initialization(self, embeddings):
-        """Test proper initialization of QuantumEmbeddings."""
+    @pytest.fixture
+    def attention_mask(self):
+        """Create attention mask."""
+        return torch.ones(2, 10, dtype=torch.float)
+    
+    def test_initialization(self, config):
+        """Test quantum embeddings initialization."""
+        embeddings = QuantumEmbeddings(config=config)
+        
         assert embeddings.vocab_size == 1000
         assert embeddings.embedding_dim == 128
-        assert embeddings.num_states == 4
-        assert embeddings.dropout == 0.1
+        assert embeddings.num_states == 4  # Default
+        assert embeddings.superposition_strength == 0.5  # Default
+        assert hasattr(embeddings, 'state_embeddings')
+        assert hasattr(embeddings, 'superposition_matrix')
+        assert hasattr(embeddings, 'position_embeddings')
+        assert hasattr(embeddings, 'token_type_embeddings')
+        assert hasattr(embeddings, 'LayerNorm')
+        assert hasattr(embeddings, 'dropout')
+    
+    def test_initialization_with_custom_params(self):
+        """Test initialization with custom parameters."""
+        embeddings = QuantumEmbeddings(
+            vocab_size=500,
+            embedding_dim=256,
+            num_states=8,
+            superposition_strength=0.7
+        )
         
-        # Check embedding layers
-        assert embeddings.token_embeddings.num_embeddings == 1000
-        assert embeddings.token_embeddings.embedding_dim == 128
-        assert embeddings.state_embeddings.num_embeddings == 1000
-        assert embeddings.state_embeddings.embedding_dim == 128 * 4
-        
-        # Check collapse layer
-        assert isinstance(embeddings.collapse_layer, ContextCollapseLayer)
+        assert embeddings.vocab_size == 500
+        assert embeddings.embedding_dim == 256
+        assert embeddings.num_states == 8
+        assert embeddings.superposition_strength == 0.7
     
     def test_forward_superposition(self, embeddings, input_ids):
-        """Test forward pass without collapse (superposition state)."""
-        output = embeddings(input_ids, collapse=False)
+        """Test forward pass with superposition."""
+        embeddings_output, uncertainty = embeddings(input_ids, collapse=False)
         
-        # Output should have shape [batch, seq, embedding_dim]
-        assert output.shape == (2, 10, 128)
-        
-        # Should not be the same as token embeddings (due to superposition)
-        token_embeds = embeddings.token_embeddings(input_ids)
-        assert not torch.allclose(output, token_embeds)
+        assert embeddings_output.shape == (2, 10, 128)
+        assert uncertainty.shape == (2, 10)
+        assert torch.all(uncertainty >= 0)  # Uncertainty should be non-negative
     
     def test_forward_collapse(self, embeddings, input_ids):
         """Test forward pass with collapse."""
-        output = embeddings(input_ids, collapse=True)
+        context = torch.randn(2, 10, 128)
+        embeddings_output, uncertainty = embeddings(
+            input_ids, 
+            context=context, 
+            collapse=True
+        )
         
-        # Output should have shape [batch, seq, embedding_dim]
-        assert output.shape == (2, 10, 128)
+        assert embeddings_output.shape == (2, 10, 128)
+        assert uncertainty.shape == (2, 10)
+        assert torch.all(uncertainty == 0)  # Collapsed states have no uncertainty
     
     def test_forward_with_context(self, embeddings, input_ids):
-        """Test forward pass with context tensor."""
+        """Test forward pass with context."""
         context = torch.randn(2, 10, 128)
-        output = embeddings(input_ids, context=context, collapse=True)
+        embeddings_output, uncertainty = embeddings(
+            input_ids, 
+            context=context
+        )
         
-        assert output.shape == (2, 10, 128)
+        assert embeddings_output.shape == (2, 10, 128)
+        assert uncertainty.shape == (2, 10)
     
     def test_create_superposition(self, embeddings, input_ids):
         """Test superposition creation."""
-        superposition = embeddings._create_superposition(input_ids)
+        state_embeds = embeddings.state_embeddings[input_ids]
+        superposition = embeddings._create_superposition(state_embeds)
         
-        # Should have shape [batch, seq, num_states, embedding_dim]
-        assert superposition.shape == (2, 10, 4, 128)
-        
-        # Each state should be different
-        for i in range(4):
-            for j in range(i + 1, 4):
-                assert not torch.allclose(
-                    superposition[:, :, i, :], 
-                    superposition[:, :, j, :]
-                )
+        assert superposition.shape == (2, 10, 128)
+        assert not torch.isnan(superposition).any()
     
     def test_collapse_superposition(self, embeddings, input_ids):
         """Test superposition collapse."""
-        superposition = embeddings._create_superposition(input_ids)
+        state_embeds = embeddings.state_embeddings[input_ids]
         context = torch.randn(2, 10, 128)
-        
-        collapsed = embeddings._collapse_superposition(superposition, context)
+        collapsed = embeddings._collapse_superposition(state_embeds, context)
         
         assert collapsed.shape == (2, 10, 128)
+        assert not torch.isnan(collapsed).any()
     
     def test_get_uncertainty(self, embeddings, input_ids):
-        """Test uncertainty calculation."""
-        uncertainty = embeddings.get_uncertainty(input_ids)
+        """Test uncertainty computation."""
+        state_embeds = embeddings.state_embeddings[input_ids]
+        uncertainty = embeddings.get_uncertainty_from_states(state_embeds)
         
         assert uncertainty.shape == (2, 10)
-        assert torch.all(uncertainty >= 0)  # Uncertainty should be non-negative
-        assert torch.all(uncertainty <= 1)  # Uncertainty should be <= 1
-    
-    def test_different_vocab_sizes(self):
-        """Test initialization with different vocabulary sizes."""
-        for vocab_size in [100, 1000, 10000]:
-            embeddings = QuantumEmbeddings(
-                vocab_size=vocab_size,
-                embedding_dim=64,
-                num_states=3
-            )
-            assert embeddings.token_embeddings.num_embeddings == vocab_size
-            assert embeddings.state_embeddings.num_embeddings == vocab_size
-    
-    def test_different_embedding_dims(self):
-        """Test initialization with different embedding dimensions."""
-        for embedding_dim in [32, 64, 128, 256]:
-            embeddings = QuantumEmbeddings(
-                vocab_size=1000,
-                embedding_dim=embedding_dim,
-                num_states=4
-            )
-            assert embeddings.token_embeddings.embedding_dim == embedding_dim
-            assert embeddings.state_embeddings.embedding_dim == embedding_dim * 4
-    
-    def test_different_num_states(self):
-        """Test initialization with different numbers of states."""
-        for num_states in [2, 3, 4, 8]:
-            embeddings = QuantumEmbeddings(
-                vocab_size=1000,
-                embedding_dim=128,
-                num_states=num_states
-            )
-            assert embeddings.num_states == num_states
-            assert embeddings.state_embeddings.embedding_dim == 128 * num_states
+        assert torch.all(uncertainty >= 0)
     
     def test_gradients(self, embeddings, input_ids):
-        """Test that gradients flow through the model."""
-        embeddings.train()
-        output = embeddings(input_ids, collapse=False)
-        
-        # Compute loss and backward pass
-        loss = output.sum()
+        """Test that gradients can be computed."""
+        embeddings_output, uncertainty = embeddings(input_ids)
+        loss = embeddings_output.sum() + uncertainty.sum()
         loss.backward()
         
-        # Check gradients
-        assert embeddings.token_embeddings.weight.grad is not None
-        assert embeddings.state_embeddings.weight.grad is not None
-        assert embeddings.collapse_layer.attention.weight.grad is not None
+        # Check that gradients exist
+        assert embeddings.state_embeddings.grad is not None
+        assert embeddings.superposition_matrix.grad is not None
+    
+    def test_different_vocab_sizes(self):
+        """Test with different vocabulary sizes."""
+        config = BertConfig(vocab_size=2000, hidden_size=128)
+        embeddings = QuantumEmbeddings(config=config)
+        
+        assert embeddings.vocab_size == 2000
+        assert embeddings.state_embeddings.shape[0] == 2000
+    
+    def test_different_embedding_dims(self):
+        """Test with different embedding dimensions."""
+        config = BertConfig(vocab_size=1000, hidden_size=256)
+        embeddings = QuantumEmbeddings(config=config)
+        
+        assert embeddings.embedding_dim == 256
+        assert embeddings.state_embeddings.shape[2] == 256
+    
+    def test_different_num_states(self):
+        """Test with different numbers of quantum states."""
+        config = BertConfig(vocab_size=1000, hidden_size=128)
+        embeddings = QuantumEmbeddings(config=config, num_states=6)
+        
+        assert embeddings.num_states == 6
+        assert embeddings.state_embeddings.shape[1] == 6
 
 
 class TestContextCollapseLayer:
-    """Test cases for ContextCollapseLayer class."""
+    """Test context collapse layer functionality."""
     
     @pytest.fixture
     def collapse_layer(self):
-        """Create a ContextCollapseLayer instance for testing."""
+        """Create context collapse layer."""
         return ContextCollapseLayer(
             embedding_dim=128,
-            num_states=4,
-            collapse_method='attention'
+            context_window=5,
+            collapse_strategy='attention'
         )
-    
-    @pytest.fixture
-    def superposition(self):
-        """Create sample superposition tensor."""
-        return torch.randn(2, 10, 4, 128)
-    
-    @pytest.fixture
-    def context(self):
-        """Create sample context tensor."""
-        return torch.randn(2, 10, 128)
-    
-    def test_initialization(self, collapse_layer):
-        """Test proper initialization."""
-        assert collapse_layer.embedding_dim == 128
-        assert collapse_layer.num_states == 4
-        assert collapse_layer.collapse_method == 'attention'
-        
-        # Check that attention layer exists
-        assert hasattr(collapse_layer, 'attention')
-    
-    def test_attention_collapse(self, collapse_layer, superposition, context):
-        """Test collapse using attention method."""
-        output = collapse_layer(superposition, context)
-        
-        assert output.shape == (2, 10, 128)
-    
-    def test_convolution_collapse(self):
-        """Test collapse using convolution method."""
-        collapse_layer = ContextCollapseLayer(
-            embedding_dim=128,
-            num_states=4,
-            collapse_method='convolution'
-        )
-        
-        superposition = torch.randn(2, 10, 4, 128)
-        context = torch.randn(2, 10, 128)
-        
-        output = collapse_layer(superposition, context)
-        assert output.shape == (2, 10, 128)
-    
-    def test_rnn_collapse(self):
-        """Test collapse using RNN method."""
-        collapse_layer = ContextCollapseLayer(
-            embedding_dim=128,
-            num_states=4,
-            collapse_method='rnn'
-        )
-        
-        superposition = torch.randn(2, 10, 4, 128)
-        context = torch.randn(2, 10, 128)
-        
-        output = collapse_layer(superposition, context)
-        assert output.shape == (2, 10, 128)
-    
-    def test_invalid_collapse_method(self):
-        """Test that invalid collapse method raises error."""
-        with pytest.raises(ValueError):
-            ContextCollapseLayer(
-                embedding_dim=128,
-                num_states=4,
-                collapse_method='invalid_method'
-            )
-
-
-class TestAdaptiveCollapseLayer:
-    """Test cases for AdaptiveCollapseLayer class."""
-    
-    @pytest.fixture
-    def adaptive_layer(self):
-        """Create an AdaptiveCollapseLayer instance for testing."""
-        return AdaptiveCollapseLayer(
-            embedding_dim=128,
-            num_states=4,
-            collapse_methods=['attention', 'convolution', 'rnn']
-        )
-    
-    def test_initialization(self, adaptive_layer):
-        """Test proper initialization."""
-        assert adaptive_layer.embedding_dim == 128
-        assert adaptive_layer.num_states == 4
-        assert len(adaptive_layer.collapse_methods) == 3
-        assert 'attention' in adaptive_layer.collapse_methods
-        assert 'convolution' in adaptive_layer.collapse_methods
-        assert 'rnn' in adaptive_layer.collapse_methods
-        
-        # Check that method selector exists
-        assert hasattr(adaptive_layer, 'method_selector')
-    
-    def test_forward(self, adaptive_layer):
-        """Test forward pass."""
-        superposition = torch.randn(2, 10, 4, 128)
-        context = torch.randn(2, 10, 128)
-        
-        output = adaptive_layer(superposition, context)
-        
-        assert output.shape == (2, 10, 128)
-
-
-class TestEntanglementCorrelation:
-    """Test cases for EntanglementCorrelation class."""
-    
-    @pytest.fixture
-    def entanglement(self):
-        """Create an EntanglementCorrelation instance for testing."""
-        return EntanglementCorrelation(embedding_dim=128)
     
     @pytest.fixture
     def embeddings(self):
-        """Create sample embeddings."""
+        """Create embeddings tensor."""
         return torch.randn(2, 10, 128)
     
-    def test_initialization(self, entanglement):
-        """Test proper initialization."""
-        assert entanglement.embedding_dim == 128
-        assert hasattr(entanglement, 'correlation_matrix')
+    def test_initialization(self, collapse_layer):
+        """Test initialization."""
+        assert collapse_layer.embedding_dim == 128
+        assert collapse_layer.context_window == 5
+        assert collapse_layer.collapse_strategy == 'attention'
+        assert hasattr(collapse_layer, 'context_attention')
     
-    def test_forward(self, entanglement, embeddings):
-        """Test forward pass."""
-        output = entanglement(embeddings)
+    def test_attention_collapse(self, collapse_layer, embeddings):
+        """Test attention-based collapse."""
+        output = collapse_layer(embeddings)
         
-        assert output.shape == embeddings.shape
-        assert not torch.allclose(output, embeddings)  # Should be modified
+        assert output.shape == (2, 10, 128)
+        assert not torch.isnan(output).any()
+    
+    def test_convolution_collapse(self):
+        """Test convolution-based collapse."""
+        collapse_layer = ContextCollapseLayer(
+            embedding_dim=128,
+            context_window=5,
+            collapse_strategy='conv'
+        )
+        
+        embeddings = torch.randn(2, 10, 128)
+        output = collapse_layer(embeddings)
+        
+        assert output.shape == (2, 10, 128)
+        assert not torch.isnan(output).any()
+    
+    def test_rnn_collapse(self):
+        """Test RNN-based collapse."""
+        collapse_layer = ContextCollapseLayer(
+            embedding_dim=128,
+            context_window=5,
+            collapse_strategy='rnn'
+        )
+        
+        embeddings = torch.randn(2, 10, 128)
+        output = collapse_layer(embeddings)
+        
+        assert output.shape == (2, 10, 128)
+        assert not torch.isnan(output).any()
+    
+    def test_invalid_collapse_method(self):
+        """Test invalid collapse method raises error."""
+        with pytest.raises(ValueError):
+            ContextCollapseLayer(
+                embedding_dim=128,
+                context_window=5,
+                collapse_strategy='invalid'
+            )
+    
+    def test_gradients(self, collapse_layer, embeddings):
+        """Test that gradients can be computed."""
+        output = collapse_layer(embeddings)
+        loss = output.sum()
+        loss.backward()
+        
+        # Check that gradients exist
+        assert collapse_layer.context_attention.in_proj_weight.grad is not None
 
 
-class TestBellStateEntanglement:
-    """Test cases for BellStateEntanglement class."""
+class TestAdaptiveCollapseLayer:
+    """Test adaptive collapse layer functionality."""
     
     @pytest.fixture
-    def bell_entanglement(self):
-        """Create a BellStateEntanglement instance for testing."""
-        return BellStateEntanglement(embedding_dim=128)
+    def adaptive_layer(self):
+        """Create adaptive collapse layer."""
+        return AdaptiveCollapseLayer(
+            embedding_dim=128,
+            num_strategies=3,
+            temperature=1.0
+        )
     
-    def test_initialization(self, bell_entanglement):
-        """Test proper initialization."""
-        assert bell_entanglement.embedding_dim == 128
+    @pytest.fixture
+    def embeddings(self):
+        """Create embeddings tensor."""
+        return torch.randn(2, 10, 128)
     
-    def test_forward(self, bell_entanglement):
+    def test_initialization(self, adaptive_layer):
+        """Test initialization."""
+        assert adaptive_layer.embedding_dim == 128
+        assert adaptive_layer.num_strategies == 3
+        assert adaptive_layer.temperature == 1.0
+        assert len(adaptive_layer.strategy_layers) == 3
+    
+    def test_forward(self, adaptive_layer, embeddings):
         """Test forward pass."""
-        embeddings = torch.randn(2, 10, 128)
-        output = bell_entanglement(embeddings)
+        output, strategy_weights = adaptive_layer(embeddings)
         
-        assert output.shape == embeddings.shape
+        assert output.shape == (2, 10, 128)
+        assert strategy_weights.shape == (2, 10, 3)
+        assert not torch.isnan(output).any()
+        assert not torch.isnan(strategy_weights).any()
+    
+    def test_method_selection(self, adaptive_layer, embeddings):
+        """Test strategy selection mechanism."""
+        output, strategy_weights = adaptive_layer(embeddings)
+        
+        # Strategy weights should sum to 1 across strategies
+        assert torch.allclose(strategy_weights.sum(dim=-1), torch.ones(2, 10), atol=1e-6)
+    
+    def test_gradients(self, adaptive_layer, embeddings):
+        """Test that gradients can be computed."""
+        output, strategy_weights = adaptive_layer(embeddings)
+        loss = output.sum() + strategy_weights.sum()
+        loss.backward()
+        
+        # Check that gradients exist
+        assert adaptive_layer.strategy_layers[0].context_attention.in_proj_weight.grad is not None
 
 
 class TestQuantumMeasurement:
-    """Test cases for QuantumMeasurement class."""
+    """Test quantum measurement functionality."""
     
     @pytest.fixture
     def measurement(self):
-        """Create a QuantumMeasurement instance for testing."""
-        return QuantumMeasurement(embedding_dim=128, num_bases=3)
+        """Create quantum measurement instance."""
+        return QuantumMeasurement(
+            embedding_dim=128,
+            measurement_basis='computational'
+        )
     
     @pytest.fixture
     def state(self):
-        """Create sample quantum state."""
+        """Create quantum state tensor."""
         return torch.randn(2, 10, 128)
     
     def test_initialization(self, measurement):
-        """Test proper initialization."""
+        """Test initialization."""
         assert measurement.embedding_dim == 128
-        assert measurement.num_bases == 3
-        assert hasattr(measurement, 'measurement_bases')
+        assert measurement.measurement_basis == 'computational'
+        assert hasattr(measurement, 'basis_matrix')
     
     def test_forward(self, measurement, state):
         """Test forward pass."""
-        output = measurement(state)
+        measured, results = measurement(state)
         
-        assert output.shape == state.shape
-        assert hasattr(output, 'measurement_results')
+        assert measured.shape == (2, 10, 128)
+        assert results.shape == (2, 10, 129)  # embed_dim + 1 for uncertainty
+        assert not torch.isnan(measured).any()
+        assert not torch.isnan(results).any()
+    
+    def test_measurement_bases(self, measurement):
+        """Test measurement basis setup."""
+        assert measurement.basis_matrix.shape == (128, 128)
+        # Basis should be normalized
+        assert torch.allclose(
+            torch.norm(measurement.basis_matrix, dim=0),
+            torch.ones(128),
+            atol=1e-6
+        )
+    
+    def test_measurement_results(self, measurement, state):
+        """Test measurement results computation."""
+        measured, results = measurement(state)
+        
+        # Results should contain measurement probabilities and uncertainty
+        assert results.shape == (2, 10, 129)
+        assert not torch.isnan(results).any()
+    
+    def test_gradients(self, measurement, state):
+        """Test that gradients can be computed."""
+        measured, results = measurement(state)
+        loss = measured.sum() + results.sum()
+        loss.backward()
+        
+        # Check that gradients exist
+        assert measurement.basis_matrix.grad is not None
 
 
 class TestAdaptiveMeasurement:
-    """Test cases for AdaptiveMeasurement class."""
+    """Test adaptive measurement functionality."""
     
     @pytest.fixture
     def adaptive_measurement(self):
-        """Create an AdaptiveMeasurement instance for testing."""
-        return AdaptiveMeasurement(embedding_dim=128)
+        """Create adaptive measurement instance."""
+        return AdaptiveMeasurement(
+            embedding_dim=128,
+            num_bases=4,
+            temperature=1.0
+        )
+    
+    @pytest.fixture
+    def state(self):
+        """Create quantum state tensor."""
+        return torch.randn(2, 10, 128)
     
     def test_initialization(self, adaptive_measurement):
-        """Test proper initialization."""
+        """Test initialization."""
         assert adaptive_measurement.embedding_dim == 128
-        assert hasattr(adaptive_measurement, 'basis_selector')
+        assert adaptive_measurement.num_bases == 4
+        assert adaptive_measurement.temperature == 1.0
+        assert len(adaptive_measurement.measurement_bases) == 4
     
-    def test_forward(self, adaptive_measurement):
+    def test_forward(self, adaptive_measurement, state):
         """Test forward pass."""
-        state = torch.randn(2, 10, 128)
-        context = torch.randn(2, 10, 128)
+        measured, results, basis_weights = adaptive_measurement(state)
         
-        output = adaptive_measurement(state, context)
+        assert measured.shape == (2, 10, 128)
+        assert results.shape == (2, 10, 129)  # embed_dim + 1 for uncertainty
+        assert basis_weights.shape == (2, 10, 4)
+        assert not torch.isnan(measured).any()
+        assert not torch.isnan(results).any()
+        assert not torch.isnan(basis_weights).any()
+    
+    def test_basis_selection(self, adaptive_measurement, state):
+        """Test basis selection mechanism."""
+        measured, results, basis_weights = adaptive_measurement(state)
         
-        assert output.shape == state.shape
+        # Basis weights should sum to 1 across bases
+        assert torch.allclose(basis_weights.sum(dim=-1), torch.ones(2, 10), atol=1e-6)
+    
+    def test_context_influence(self, adaptive_measurement, state):
+        """Test context influence on basis selection."""
+        measured1, results1, weights1 = adaptive_measurement(state)
+        measured2, results2, weights2 = adaptive_measurement(state)
+        
+        # Results should be deterministic for same input
+        assert torch.allclose(measured1, measured2, atol=1e-6)
+        assert torch.allclose(weights1, weights2, atol=1e-6)
+    
+    def test_gradients(self, adaptive_measurement, state):
+        """Test that gradients can be computed."""
+        measured, results, basis_weights = adaptive_measurement(state)
+        loss = measured.sum() + results.sum() + basis_weights.sum()
+        loss.backward()
+        
+        # Check that gradients exist
+        assert adaptive_measurement.measurement_bases[0].basis_matrix.grad is not None
 
 
-if __name__ == "__main__":
-    pytest.main([__file__])
+class TestEntanglementCorrelation:
+    """Test entanglement correlation functionality."""
+    
+    @pytest.fixture
+    def entanglement(self):
+        """Create entanglement correlation instance."""
+        return EntanglementCorrelation(
+            embedding_dim=128,
+            num_entangled_pairs=5,
+            entanglement_strength=0.8,
+            correlation_type='linear'
+        )
+    
+    @pytest.fixture
+    def embeddings(self):
+        """Create embeddings tensor."""
+        return torch.randn(2, 10, 128)
+    
+    def test_initialization(self, entanglement):
+        """Test initialization."""
+        assert entanglement.embedding_dim == 128
+        assert entanglement.num_entangled_pairs == 5
+        assert entanglement.entanglement_strength == 0.8
+        assert entanglement.correlation_type == 'linear'
+        assert hasattr(entanglement, 'entanglement_matrix')
+        assert hasattr(entanglement, 'correlation_weights')
+    
+    def test_forward(self, entanglement, embeddings):
+        """Test forward pass."""
+        entangled = entanglement(embeddings)
+        
+        assert entangled.shape == (2, 10, 128)
+        assert not torch.isnan(entangled).any()
+    
+    def test_entanglement_matrix(self, entanglement):
+        """Test entanglement matrix properties."""
+        matrix = entanglement.entanglement_matrix
+        assert matrix.shape == (5, 128, 128)
+        assert not torch.isnan(matrix).any()
+    
+    def test_correlation_weights(self, entanglement):
+        """Test correlation weights."""
+        weights = entanglement.correlation_weights
+        assert weights.shape == (5,)
+        assert torch.all(weights >= 0)  # Weights should be non-negative
+    
+    def test_gradients(self, entanglement, embeddings):
+        """Test that gradients can be computed."""
+        entangled = entanglement(embeddings)
+        loss = entangled.sum()
+        loss.backward()
+        
+        # Check that gradients exist
+        assert entanglement.entanglement_matrix.grad is not None
+
+
+class TestCoreIntegration:
+    """Test integration between core components."""
+    
+    @pytest.fixture
+    def embeddings(self):
+        """Create quantum embeddings."""
+        config = BertConfig(vocab_size=1000, hidden_size=128)
+        return QuantumEmbeddings(config=config)
+    
+    @pytest.fixture
+    def collapse_layer(self):
+        """Create context collapse layer."""
+        return ContextCollapseLayer(
+            embedding_dim=128,
+            context_window=3,
+            collapse_strategy='attention'
+        )
+    
+    @pytest.fixture
+    def entanglement(self):
+        """Create entanglement correlation."""
+        return EntanglementCorrelation(
+            embedding_dim=128,
+            num_entangled_pairs=3,
+            entanglement_strength=0.5,
+            correlation_type='linear'
+        )
+    
+    @pytest.fixture
+    def measurement(self):
+        """Create quantum measurement."""
+        return QuantumMeasurement(
+            embedding_dim=128,
+            measurement_basis='computational'
+        )
+    
+    def test_comprehensive_core_workflow(self, embeddings, collapse_layer, entanglement, measurement):
+        """Test complete workflow through all core components."""
+        input_ids = torch.randint(0, 1000, (2, 8))
+        
+        # 1. Generate quantum embeddings
+        quantum_embeds, uncertainty = embeddings(input_ids)
+        assert quantum_embeds.shape == (2, 8, 128)
+        assert uncertainty.shape == (2, 8)
+        
+        # 2. Apply context collapse
+        collapsed_embeds = collapse_layer(quantum_embeds)
+        assert collapsed_embeds.shape == (2, 8, 128)
+        
+        # 3. Apply entanglement
+        entangled_embeds = entanglement(collapsed_embeds)
+        assert entangled_embeds.shape == (2, 8, 128)
+        
+        # 4. Measure quantum state
+        measured_embeds, measurement_results = measurement(entangled_embeds)
+        assert measured_embeds.shape == (2, 8, 128)
+        assert measurement_results.shape == (2, 8, 129)
+        
+        # 5. Verify end-to-end gradients
+        final_output = measured_embeds.sum() + measurement_results.sum()
+        final_output.backward()
+        
+        # Check gradients exist
+        assert embeddings.state_embeddings.grad is not None
+        assert collapse_layer.context_attention.in_proj_weight.grad is not None
+        assert entanglement.entanglement_matrix.grad is not None
+        assert measurement.basis_matrix.grad is not None

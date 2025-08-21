@@ -76,7 +76,12 @@ class QuantumLoss(nn.Module):
     ) -> torch.Tensor:
         """Compute quantum regularization terms."""
         if quantum_outputs is None:
-            return torch.tensor(0.0, device=next(self.parameters()).device)
+            # Get device from base_loss parameters or default to CPU
+            try:
+                device = next(self.base_loss.parameters()).device
+            except (StopIteration, AttributeError):
+                device = torch.device('cpu')
+            return torch.tensor(0.0, device=device)
         
         reg_terms = []
         

@@ -121,7 +121,9 @@ class QuantumTrainer:
             total_loss += loss.item()
             if hasattr(outputs, 'quantum_loss'):
                 total_quantum_loss += outputs.quantum_loss.item()
-            if hasattr(outputs, 'uncertainty'):
+            if hasattr(outputs, 'quantum_uncertainty') and outputs.quantum_uncertainty is not None:
+                total_uncertainty += outputs.quantum_uncertainty.mean().item()
+            elif hasattr(outputs, 'uncertainty'):
                 total_uncertainty += outputs.uncertainty.mean().item()
             
             num_batches += 1
@@ -182,7 +184,9 @@ class QuantumTrainer:
                 total_loss += loss.item()
                 if hasattr(outputs, 'quantum_loss'):
                     total_quantum_loss += outputs.quantum_loss.item()
-                if hasattr(outputs, 'uncertainty'):
+                if hasattr(outputs, 'quantum_uncertainty') and outputs.quantum_uncertainty is not None:
+                    total_uncertainty += outputs.quantum_uncertainty.mean().item()
+                elif hasattr(outputs, 'uncertainty'):
                     total_uncertainty += outputs.uncertainty.mean().item()
                 
                 num_batches += 1
@@ -275,28 +279,36 @@ class QuantumTrainer:
         # Extract input data
         input_ids = batch['input_ids']
         attention_mask = batch.get('attention_mask')
+        token_type_ids = batch.get('token_type_ids')  # ADD: token type support
         labels = batch.get('labels')
         
-        # Create context for quantum collapse if available
-        context = None
-        if 'context' in batch:
-            context = batch['context']
-        
-        # Forward pass
+        # Forward pass with quantum parameters
         if hasattr(self.model, 'forward'):
-            outputs = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                context=context,
-                collapse=collapse_probability > 0.5
-            )
+            # Check if it's a quantum BERT model
+            if hasattr(self.model, 'bert') and hasattr(self.model.bert, 'embeddings'):
+                # Quantum BERT model
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    token_type_ids=token_type_ids,
+                    labels=labels,
+                    collapse_probability=collapse_probability,
+                    return_dict=True
+                )
+            else:
+                # Legacy quantum model
+                context = None
+                if 'context' in batch:
+                    context = batch['context']
+                
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    context=context,
+                    collapse=collapse_probability > 0.5
+                )
         else:
             raise ValueError("Model must have a forward method")
-        
-        # Add quantum-specific outputs
-        if hasattr(self.model, 'get_uncertainty'):
-            uncertainty = self.model.get_uncertainty(input_ids)
-            outputs.uncertainty = uncertainty
         
         return outputs
     
@@ -307,7 +319,11 @@ class QuantumTrainer:
     ) -> torch.Tensor:
         """Compute loss with quantum regularization."""
         # Main task loss
-        if 'labels' in batch:
+        if hasattr(outputs, 'loss') and outputs.loss is not None:
+            # Model computed loss internally (e.g., QuantumBertForSequenceClassification)
+            main_loss = outputs.loss
+        elif 'labels' in batch and hasattr(outputs, 'logits'):
+            # Compute loss manually
             main_loss = self.loss_fn(outputs.logits, batch['labels'])
         else:
             main_loss = torch.tensor(0.0, device=self.device)
@@ -315,11 +331,18 @@ class QuantumTrainer:
         # Quantum regularization
         quantum_reg = torch.tensor(0.0, device=self.device)
         
-        if self.uncertainty_regularization > 0 and hasattr(outputs, 'uncertainty'):
-            # Regularize uncertainty (encourage reasonable uncertainty levels)
-            uncertainty = outputs.uncertainty
-            target_uncertainty = torch.ones_like(uncertainty) * 0.5
-            quantum_reg = F.mse_loss(uncertainty, target_uncertainty)
+        # Uncertainty regularization
+        if self.uncertainty_regularization > 0:
+            if hasattr(outputs, 'quantum_uncertainty') and outputs.quantum_uncertainty is not None:
+                # Regularize uncertainty (encourage reasonable uncertainty levels)
+                uncertainty = outputs.quantum_uncertainty
+                target_uncertainty = torch.ones_like(uncertainty) * 0.5
+                quantum_reg = torch.nn.functional.mse_loss(uncertainty, target_uncertainty)
+            elif hasattr(outputs, 'uncertainty'):
+                # Legacy uncertainty field
+                uncertainty = outputs.uncertainty
+                target_uncertainty = torch.ones_like(uncertainty) * 0.5
+                quantum_reg = torch.nn.functional.mse_loss(uncertainty, target_uncertainty)
         
         # Total loss
         total_loss = main_loss + self.uncertainty_regularization * quantum_reg

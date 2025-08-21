@@ -38,6 +38,11 @@ class ContextCollapseLayer(nn.Module):
         """
         super().__init__()
         
+        # Validate collapse strategy
+        valid_strategies = ["attention", "conv", "rnn"]
+        if collapse_strategy not in valid_strategies:
+            raise ValueError(f"Invalid collapse_strategy: {collapse_strategy}. Must be one of {valid_strategies}")
+        
         self.embedding_dim = embedding_dim
         self.context_window = context_window
         self.collapse_strategy = collapse_strategy

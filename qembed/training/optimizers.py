@@ -80,7 +80,23 @@ class QuantumOptimizer(optim.Optimizer):
     
     def _is_quantum_parameter(self, param) -> bool:
         """Determine if a parameter is quantum-related."""
-        param_name = param.name if hasattr(param, 'name') else str(param)
+        # Try to get parameter name from various sources
+        param_name = None
+        
+        # Check if parameter has a name attribute
+        if hasattr(param, 'name') and param.name is not None:
+            param_name = param.name
+        # Check if parameter has a _name attribute (PyTorch internal)
+        elif hasattr(param, '_name') and param._name is not None:
+            param_name = param._name
+        # Fall back to string representation
+        else:
+            param_name = str(param)
+        
+        # If we still don't have a name, use a default
+        if param_name is None or param_name == '':
+            param_name = 'unknown_param'
+        
         quantum_keywords = ['quantum', 'superposition', 'entanglement', 'measurement']
         return any(keyword in param_name.lower() for keyword in quantum_keywords)
     

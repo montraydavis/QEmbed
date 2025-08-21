@@ -5,17 +5,20 @@ Welcome to the QEmbed documentation! This comprehensive guide will help you unde
 ## 📚 Documentation Structure
 
 ### Getting Started
+
 - **[Installation Guide](installation.md)** - How to install and set up QEmbed
 - **[Quick Start Tutorial](quickstart.md)** - Your first steps with QEmbed
 - **[API Reference](api_reference.md)** - Complete API documentation
 
 ### Core Concepts
+
 - **Quantum Superposition** - Understanding how tokens can exist in multiple states
 - **Context-Driven Collapse** - How superposition states collapse based on context
 - **Quantum Entanglement** - Modeling correlations between different positions
 - **Uncertainty Quantification** - Built-in uncertainty estimates
 
 ### Examples and Tutorials
+
 - **[Basic Usage Examples](../examples/basic_usage.py)** - Simple examples to get started
 - **[Quantum BERT Example](../examples/quantum_bert_example.py)** - Using quantum-enhanced BERT
 - **[Polysemy Demo](../examples/polysemy_demo.ipynb)** - Handling ambiguous words
@@ -24,16 +27,19 @@ Welcome to the QEmbed documentation! This comprehensive guide will help you unde
 ## 🚀 Quick Navigation
 
 ### For Beginners
+
 1. Start with the [Installation Guide](installation.md)
 2. Follow the [Quick Start Tutorial](quickstart.md)
 3. Try the [Basic Usage Examples](../examples/basic_usage.py)
 
 ### For Researchers
+
 1. Review the [API Reference](api_reference.md)
 2. Check out the [Benchmarks](../examples/benchmarks/)
 3. Explore the [Polysemy Demo](../examples/polysemy_demo.ipynb)
 
 ### For Developers
+
 1. Read the [Installation Guide](installation.md) for development setup
 2. Review the [API Reference](api_reference.md)
 3. Run the test suite: `pytest tests/`
@@ -41,6 +47,7 @@ Welcome to the QEmbed documentation! This comprehensive guide will help you unde
 ## 🔬 Key Features
 
 ### Quantum Superposition Embeddings
+
 ```python
 from qembed.core.quantum_embeddings import QuantumEmbeddings
 
@@ -59,6 +66,7 @@ collapsed = embeddings(input_ids, context=context, collapse=True)
 ```
 
 ### Quantum-Enhanced Models
+
 ```python
 from qembed.models.quantum_bert import QuantumBERT
 
@@ -77,6 +85,7 @@ uncertainty = model.get_uncertainty(input_ids)
 ```
 
 ### Quantum-Aware Training
+
 ```python
 from qembed.training.quantum_trainer import QuantumTrainer
 
@@ -121,12 +130,14 @@ QEmbed is particularly useful for:
 We welcome contributions to both the code and documentation! Please see our [Contributing Guide](../CONTRIBUTING.md) for details.
 
 ### Documentation Contributions
+
 - Fix typos or clarify explanations
 - Add new examples or tutorials
 - Improve API documentation
 - Add missing sections
 
 ### Code Contributions
+
 - Bug fixes and improvements
 - New features and models
 - Performance optimizations

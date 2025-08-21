@@ -28,6 +28,7 @@ class qembed.core.quantum_embeddings.QuantumEmbeddings(
 ```
 
 **Parameters:**
+
 - `vocab_size` (int): Size of the vocabulary
 - `embedding_dim` (int): Dimension of embeddings
 - `num_states` (int): Number of quantum states per token (default: 4)
@@ -37,23 +38,29 @@ class qembed.core.quantum_embeddings.QuantumEmbeddings(
 **Methods:**
 
 #### `forward(input_ids, context=None, collapse=False)`
+
 Forward pass through the quantum embeddings.
 
 **Parameters:**
+
 - `input_ids` (torch.Tensor): Input token IDs [batch_size, seq_len]
 - `context` (torch.Tensor, optional): Context tensor for collapse [batch_size, seq_len, embedding_dim]
 - `collapse` (bool): Whether to collapse superposition (default: False)
 
 **Returns:**
+
 - `torch.Tensor`: Embeddings [batch_size, seq_len, embedding_dim]
 
 #### `get_uncertainty(input_ids)`
+
 Calculate uncertainty for given input tokens.
 
 **Parameters:**
+
 - `input_ids` (torch.Tensor): Input token IDs
 
 **Returns:**
+
 - `torch.Tensor`: Uncertainty scores [batch_size, seq_len]
 
 ### ContextCollapseLayer
@@ -70,6 +77,7 @@ class qembed.core.collapse_layers.ContextCollapseLayer(
 ```
 
 **Parameters:**
+
 - `embedding_dim` (int): Dimension of embeddings
 - `num_states` (int): Number of quantum states
 - `collapse_method` (str): Collapse method ('attention', 'convolution', 'rnn')
@@ -78,13 +86,16 @@ class qembed.core.collapse_layers.ContextCollapseLayer(
 **Methods:**
 
 #### `forward(superposition_states, context)`
+
 Collapse superposition states based on context.
 
 **Parameters:**
+
 - `superposition_states` (torch.Tensor): States in superposition [batch_size, seq_len, num_states, embedding_dim]
 - `context` (torch.Tensor): Context tensor [batch_size, seq_len, embedding_dim]
 
 **Returns:**
+
 - `torch.Tensor`: Collapsed embeddings [batch_size, seq_len, embedding_dim]
 
 ### AdaptiveCollapseLayer
@@ -101,6 +112,7 @@ class qembed.core.collapse_layers.AdaptiveCollapseLayer(
 ```
 
 **Parameters:**
+
 - `embedding_dim` (int): Dimension of embeddings
 - `num_states` (int): Number of quantum states
 - `collapse_methods` (List[str]): Available collapse methods
@@ -119,6 +131,7 @@ class qembed.core.entanglement.EntanglementCorrelation(
 ```
 
 **Parameters:**
+
 - `embedding_dim` (int): Dimension of embeddings
 - `correlation_type` (str): Type of correlation ('general', 'pairwise', 'multi_party')
 - `dropout` (float): Dropout probability
@@ -159,6 +172,7 @@ class qembed.core.measurement.QuantumMeasurement(
 ```
 
 **Parameters:**
+
 - `embedding_dim` (int): Dimension of embeddings
 - `num_bases` (int): Number of measurement bases
 - `dropout` (float): Dropout probability
@@ -219,6 +233,7 @@ class qembed.models.quantum_bert.QuantumBERT(
 ```
 
 **Parameters:**
+
 - `vocab_size` (int): Size of the vocabulary
 - `hidden_size` (int): Hidden layer dimension (default: 768)
 - `num_hidden_layers` (int): Number of transformer layers (default: 12)
@@ -232,9 +247,11 @@ class qembed.models.quantum_bert.QuantumBERT(
 **Methods:**
 
 #### `forward(input_ids, attention_mask=None, token_type_ids=None, position_ids=None, context=None, collapse=False)`
+
 Forward pass through the quantum BERT model.
 
 **Parameters:**
+
 - `input_ids` (torch.Tensor): Input token IDs [batch_size, seq_len]
 - `attention_mask` (torch.Tensor, optional): Attention mask [batch_size, seq_len]
 - `token_type_ids` (torch.Tensor, optional): Token type IDs [batch_size, seq_len]
@@ -243,12 +260,15 @@ Forward pass through the quantum BERT model.
 - `collapse` (bool): Whether to collapse superposition (default: False)
 
 **Returns:**
+
 - `QuantumBERTOutput`: Model outputs with last_hidden_state and pooler_output
 
 #### `get_uncertainty(input_ids)`
+
 Calculate uncertainty for given input tokens.
 
 **Returns:**
+
 - `torch.Tensor`: Uncertainty scores [batch_size, seq_len]
 
 ### QuantumTransformer
@@ -271,9 +291,11 @@ class qembed.models.quantum_transformer.QuantumTransformer(
 **Methods:**
 
 #### `forward(input_ids, mask=None, context=None, collapse=False)`
+
 Forward pass through the quantum transformer.
 
 #### `generate(input_ids, max_length, num_beams=1, context=None)`
+
 Generate text using the quantum transformer.
 
 ### HybridModel
@@ -310,6 +332,7 @@ class qembed.training.quantum_trainer.QuantumTrainer(
 ```
 
 **Parameters:**
+
 - `model` (torch.nn.Module): Model to train
 - `optimizer` (torch.optim.Optimizer): Optimizer
 - `loss_fn` (callable): Loss function
@@ -319,27 +342,35 @@ class qembed.training.quantum_trainer.QuantumTrainer(
 **Methods:**
 
 #### `train_epoch(dataloader, context=None)`
+
 Train for one epoch.
 
 **Returns:**
+
 - `dict`: Training metrics
 
 #### `validate(dataloader, context=None)`
+
 Validate the model.
 
 **Returns:**
+
 - `dict`: Validation metrics
 
 #### `train(train_dataloader, val_dataloader, num_epochs, context=None)`
+
 Full training loop.
 
 **Returns:**
+
 - `dict`: Training history
 
 #### `save_checkpoint(path, epoch, metrics)`
+
 Save model checkpoint.
 
 #### `load_checkpoint(path, model, optimizer, device)`
+
 Load model checkpoint.
 
 ### QuantumLoss
@@ -355,6 +386,7 @@ class qembed.training.losses.QuantumLoss(
 ```
 
 **Parameters:**
+
 - `base_loss` (str): Base loss function ('cross_entropy', 'mse', 'mae')
 - `quantum_regularization` (float): Quantum regularization weight
 - `uncertainty_regularization` (float): Uncertainty regularization weight
@@ -410,6 +442,7 @@ class qembed.training.optimizers.QuantumOptimizer(
 ```
 
 **Parameters:**
+
 - `params` (Iterable): Model parameters
 - `lr` (float): Learning rate
 - `quantum_lr_factor` (float): Quantum learning rate factor
@@ -456,30 +489,39 @@ class qembed.utils.quantum_utils.QuantumUtils
 **Static Methods:**
 
 #### `create_superposition(states, weights=None)`
+
 Create superposition of quantum states.
 
 #### `measure_superposition(superposition, basis)`
+
 Measure superposition in given basis.
 
 #### `create_bell_state(dim)`
+
 Create Bell state entanglement.
 
 #### `create_ghz_state(dim, num_parties)`
+
 Create GHZ state entanglement.
 
 #### `compute_fidelity(state1, state2)`
+
 Compute fidelity between quantum states.
 
 #### `compute_entanglement_entropy(state)`
+
 Compute entanglement entropy.
 
 #### `apply_quantum_gate(state, gate)`
+
 Apply quantum gate to state.
 
 #### `create_quantum_circuit(num_qubits)`
+
 Create quantum circuit.
 
 #### `quantum_fourier_transform(state)`
+
 Apply quantum Fourier transform.
 
 ### QuantumVisualization
@@ -496,18 +538,23 @@ class qembed.utils.visualization.QuantumVisualization(
 **Methods:**
 
 #### `plot_superposition_states(superposition_states)`
+
 Plot superposition states.
 
 #### `plot_entanglement_correlations(embeddings)`
+
 Plot entanglement correlations.
 
 #### `plot_uncertainty_analysis(uncertainty)`
+
 Plot uncertainty analysis.
 
 #### `plot_quantum_circuit(circuit)`
+
 Plot quantum circuit.
 
 #### `plot_3d_quantum_states(states)`
+
 Plot 3D quantum states.
 
 ### QuantumMetrics
@@ -521,15 +568,19 @@ class qembed.utils.metrics.QuantumMetrics()
 **Methods:**
 
 #### `compute_superposition_quality(embeddings)`
+
 Compute superposition quality metric.
 
 #### `compute_entanglement_strength(embeddings)`
+
 Compute entanglement strength metric.
 
 #### `compute_uncertainty_calibration(predictions, targets, uncertainty)`
+
 Compute uncertainty calibration.
 
 #### `compute_quantum_metrics(model, dataloader)`
+
 Compute comprehensive quantum metrics.
 
 ## 📊 Dataset Classes
@@ -548,6 +599,7 @@ class qembed.datasets.polysemy_datasets.PolysemyDataset(
 ```
 
 **Parameters:**
+
 - `data` (List[Dict]): List of data samples
 - `tokenizer` (callable): Tokenizer function
 - `max_length` (int): Maximum sequence length

@@ -14,7 +14,12 @@ from .core.collapse_layers import ContextCollapseLayer
 from .core.entanglement import EntanglementCorrelation
 from .core.measurement import QuantumMeasurement
 
-from .models.quantum_bert import QuantumBERT
+from .models.quantum_bert import (
+    QuantumBertModel,
+    QuantumBertForSequenceClassification,
+    QuantumBertForMaskedLM,
+    QuantumBertEmbeddings
+)
 from .models.quantum_transformer import QuantumTransformer
 from .models.hybrid_models import HybridModel
 
@@ -27,7 +32,10 @@ __all__ = [
     "ContextCollapseLayer", 
     "EntanglementCorrelation",
     "QuantumMeasurement",
-    "QuantumBERT",
+    "QuantumBertModel",
+    "QuantumBertForSequenceClassification",
+    "QuantumBertForMaskedLM",
+    "QuantumBertEmbeddings",
     "QuantumTransformer",
     "HybridModel",
     "QuantumTrainer",
